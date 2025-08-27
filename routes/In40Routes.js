@@ -41,4 +41,55 @@ router.post('/', async (req, res) => {
     }
 });
 
+
+
+
+// Route to GET IN40 data for the graph
+router.get('/analytics/rpm-vs-soc', async (req, res) => {
+    try {
+        const sql = `
+            SELECT rpm, soc, received_at 
+            FROM in40_data 
+            WHERE rpm IS NOT NULL AND soc IS NOT NULL
+            ORDER BY received_at ASC 
+            LIMIT 200
+        `;
+        const [rows] = await pool.query(sql);
+        res.json(rows);
+    } catch (dbError) {
+        console.error('Database Error fetching IN40 analytics data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch IN40 analytics data.' });
+    }
+});
+
+
+
+
+router.get('/analytics/battery-health', async (req, res) => {
+    try {
+        // Get the last 100 data points for SOC and battery temperature.
+        const sql = `
+            SELECT soc, btemp, received_at 
+            FROM in40_data 
+            WHERE soc IS NOT NULL AND btemp IS NOT NULL
+            ORDER BY received_at DESC 
+            LIMIT 100
+        `;
+        const [rows] = await pool.query(sql);
+        // Reverse the data to show time moving forward on the chart.
+        res.json(rows.reverse());
+
+    } catch (dbError) {
+        console.error('Database Error fetching IN40 battery data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch IN40 battery data.' });
+    }
+});
+
 module.exports = router;
+
+
+
+
+
+
+
