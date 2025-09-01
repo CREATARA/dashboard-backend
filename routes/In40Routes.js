@@ -85,6 +85,57 @@ router.get('/analytics/battery-health', async (req, res) => {
     }
 });
 
+
+
+// power consumption analytics
+
+
+router.get('/analytics/power', async (req, res) => {
+    try {
+        // Get the last 100 data points for voltage and amperage.
+        const sql = `
+            SELECT volt, amp, received_at 
+            FROM in40_data 
+            WHERE volt IS NOT NULL AND amp IS NOT NULL
+            ORDER BY received_at DESC 
+            LIMIT 100
+        `;
+        const [rows] = await pool.query(sql);
+        // Reverse the data to show time moving forward on the chart.
+        res.json(rows.reverse());
+
+    } catch (dbError) {
+        console.error('Database Error fetching IN40 power data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch IN40 power data.' });
+    }
+});
+
+
+// thermal analytics  
+router.get('/analytics/thermal', async (req, res) => {
+    try {
+        // Get the last 100 data points for temperature and power components.
+        const sql = `
+            SELECT btemp, mtemp, volt, amp, received_at 
+            FROM in40_data 
+            WHERE btemp IS NOT NULL AND mtemp IS NOT NULL AND volt IS NOT NULL AND amp IS NOT NULL
+            ORDER BY received_at DESC 
+            LIMIT 100
+        `;
+        const [rows] = await pool.query(sql);
+        // Reverse the data to show time moving forward on the chart.
+        res.json(rows.reverse());
+
+    } catch (dbError) {
+        console.error('Database Error fetching IN40 thermal data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch IN40 thermal data.' });
+    }
+});
+
+
+
+
+
 module.exports = router;
 
 
