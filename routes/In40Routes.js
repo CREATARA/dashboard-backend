@@ -48,7 +48,7 @@ router.post('/', async (req, res) => {
 router.get('/analytics/rpm-vs-soc', async (req, res) => {
     try {
         const sql = `
-            SELECT rpm, soc, received_at 
+            SELECT rpm, soc,  DATE_FORMAT(received_at, '%Y-%m-%dT%H:%i:%s') as received_at
             FROM in40_data 
             WHERE rpm IS NOT NULL AND soc IS NOT NULL
             ORDER BY received_at ASC 
