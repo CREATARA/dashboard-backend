@@ -51,7 +51,7 @@ router.get('/analytics/rpm-vs-soc', async (req, res) => {
             SELECT rpm, soc, received_at 
             FROM in40_data 
             WHERE rpm IS NOT NULL AND soc IS NOT NULL
-            ORDER BY received_at  DESC
+            ORDER BY received_at  ASC
             LIMIT 200
         `;
         const [rows] = await pool.query(sql);
