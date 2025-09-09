@@ -140,9 +140,48 @@ router.get('/analytics/thermal', async (req, res) => {
 
 
 
+// ** NEW ROUTE FOR ACCELERATION GRAPH **
+router.get('/analytics/acceleration', async (req, res) => {
+    try {
+        // Get the last 100 data points for RPM and SOC to calculate acceleration.
+        const sql = `
+            SELECT rpm, soc, received_at 
+            FROM ve4_data 
+            WHERE rpm IS NOT NULL AND soc IS NOT NULL
+            ORDER BY received_at DESC 
+            LIMIT 100
+        `;
+        const [rows] = await pool.query(sql);
+        // Reverse the data to show time moving forward.
+        res.json(rows.reverse());
+
+    } catch (dbError) {
+        console.error('Database Error fetching ve4 acceleration data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch ve4 acceleration data.' });
+    }
+});
 
 
 
+
+// ** NEW ROUTE FOR RIDING MODE PIE CHART **
+router.get('/analytics/mode-distribution', async (req, res) => {
+    try {
+        // This query counts how many records exist for each vmode
+        const sql = `
+            SELECT vmode, COUNT(*) as count 
+            FROM ve4_data 
+            WHERE vmode IS NOT NULL AND vmode > 0
+            GROUP BY vmode
+        `;
+        const [rows] = await pool.query(sql);
+        res.json(rows);
+
+    } catch (dbError) {
+        console.error('Database Error fetching ve4 mode data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch ve4 mode data.' });
+    }
+});
 
 
 
