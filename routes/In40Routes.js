@@ -2,153 +2,19 @@ const express = require('express');
 const pool = require('../db/index');
 const router = express.Router();
 
-router.post('/', async (req, res) => {
-    const data = req.body;
-    if (!data || Object.keys(data).length === 0) {
-        return res.status(400).json({ error: 'No data provided for IN40.' });
-    }
-    
-    // ** THE FIX IS HERE: 'motor_status' is removed **
-    const {
-        vehicle_on = null, steer_lock = null, bat_lock = null, sstand = null,
-        bat_dock = null, brake = null, kill = null, pbutton = null, rpm = null, vmode = null, odometer = null,
-        charging = null, soc = null, btemp = null, mtemp = null, DIAGNOSTICS = null, timestamp = null,
-        amp = null, volt = null
-    } = data;
 
-    // ** THE FIX IS HERE: 'motor_status' is removed from the column list **
-    const sql = `
-        INSERT INTO in40_data (
-            vehicle_on, steer_lock, bat_lock, sstand, bat_dock, 
-            brake, \`kill\`, pbutton, rpm, vmode, odometer, charging, 
-            soc, btemp, mtemp, diagnostics, \`timestamp\`, amp, volt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
+// Helper function for date-filtered queries
+const getAnalyticsData = async (res, fields, table, body) => {
     try {
-        // ** THE FIX IS HERE: 'motor_status' is removed from the values array **
-        await pool.execute(sql, [
-            vehicle_on, steer_lock, bat_lock, sstand,
-            bat_dock, brake, kill, pbutton, rpm, vmode, odometer,
-            charging, soc, btemp, mtemp, JSON.stringify(DIAGNOSTICS), timestamp,
-            amp, volt
-        ]);
-        console.log('Successfully saved IN40 data.');
-        res.status(201).json({ message: 'IN40 data saved successfully.' });
-    } catch (dbError) {
-        console.error('Database Error for IN40:', dbError);
-        res.status(500).json({ error: 'Failed to save IN40 data.' });
-    }
-});
-
-
-
-
-// Route to GET IN40 data for the graph
-// router.get('/analytics/rpm-vs-soc', async (req, res) => {
-//     try {
-//         const sql = `
-//             SELECT rpm, soc, received_at 
-//             FROM in40_data 
-//             WHERE rpm IS NOT NULL AND soc IS NOT NULL
-//             ORDER BY received_at  ASC
-//             LIMIT 200
-//         `;
-//         const [rows] = await pool.query(sql);
-//         res.json(rows);
-//     } catch (dbError) {
-//         console.error('Database Error fetching IN40 analytics data:', dbError);
-//         res.status(500).json({ error: 'Failed to fetch IN40 analytics data.' });
-//     }
-// });
-
-
-
-
-router.post('/analytics/rpm-vs-soc', async (req, res) => {
-    try {
-        const { startDate, endDate } = req.body;
-
-        let sql;
-        let params;
-
-        // If dates are provided, filter by date range
-        if (startDate && endDate) {
-            // Adjust the end date to include the entire day
-            const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
-            sql = `
-                SELECT rpm, soc, received_at 
-                FROM in40_data 
-                WHERE rpm IS NOT NULL 
-                  AND soc IS NOT NULL
-                  AND received_at BETWEEN ? AND ?
-                ORDER BY received_at ASC 
-                LIMIT 500
-            `;
-            params = [startDate, endOfDay];
-        } else {
-            // If no dates are provided, get the latest 200 data points
-            sql = `
-                SELECT rpm, soc, received_at 
-                FROM in40_data 
-                WHERE rpm IS NOT NULL AND soc IS NOT NULL
-                ORDER BY received_at DESC 
-                LIMIT 200
-            `;
-            params = [];
-        }
-
-        const [rows] = await pool.query(sql, params);
-
-        // If we fetched by latest, we need to reverse the array for the chart
-        if (!startDate) {
-            rows.reverse();
-        }
-
-        res.json(rows);
-
-    } catch (dbError) {
-        console.error('Database Error fetching IN40 analytics data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 analytics data.' });
-    }
-});
-
-
-
-
-// router.get('/analytics/battery-health', async (req, res) => {
-//     try {
-//         // Get the last 100 data points for SOC and battery temperature.
-//         const sql = `
-//             SELECT soc, btemp, received_at 
-//             FROM in40_data 
-//             WHERE soc IS NOT NULL AND btemp IS NOT NULL
-//             ORDER BY received_at DESC 
-//             LIMIT 100
-//         `;
-//         const [rows] = await pool.query(sql);
-//         // Reverse the data to show time moving forward on the chart.
-//         res.json(rows.reverse());
-
-//     } catch (dbError) {
-//         console.error('Database Error fetching IN40 battery data:', dbError);
-//         res.status(500).json({ error: 'Failed to fetch IN40 battery data.' });
-//     }
-// });
-
-
-
-router.post('/analytics/battery-health', async (req, res) => {
-    try {
-        const { startDate, endDate } = req.body;
+        const { startDate, endDate } = body;
         let sql, params;
 
         if (startDate && endDate) {
             const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
             sql = `
-                SELECT soc, btemp, received_at 
-                FROM in40_data 
-                WHERE soc IS NOT NULL AND btemp IS NOT NULL
+                SELECT ${fields}, received_at 
+                FROM ${table} 
+                WHERE ${fields.split(',').map(f => `${f.trim()} IS NOT NULL`).join(' AND ')}
                   AND received_at BETWEEN ? AND ?
                 ORDER BY received_at ASC 
                 LIMIT 500
@@ -156,9 +22,9 @@ router.post('/analytics/battery-health', async (req, res) => {
             params = [startDate, endOfDay];
         } else {
             sql = `
-                SELECT soc, btemp, received_at 
-                FROM in40_data 
-                WHERE soc IS NOT NULL AND btemp IS NOT NULL
+                SELECT ${fields}, received_at 
+                FROM ${table} 
+                WHERE ${fields.split(',').map(f => `${f.trim()} IS NOT NULL`).join(' AND ')}
                 ORDER BY received_at DESC 
                 LIMIT 200
             `;
@@ -168,53 +34,26 @@ router.post('/analytics/battery-health', async (req, res) => {
         const [rows] = await pool.query(sql, params);
         if (!startDate) rows.reverse();
         res.json(rows);
-
     } catch (dbError) {
-        console.error('Database Error fetching IN40 battery data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 battery data.' });
+        console.error(`Database Error fetching analytics data from ${table}:`, dbError);
+        res.status(500).json({ error: `Failed to fetch analytics data from ${table}.` });
     }
-});
+};
 
 
 
 
+// --- Analytics Routes ---
+router.post('/analytics/rpm-vs-soc', (req, res) => getAnalyticsData(res, 'rpm, soc', 'in40_data', req.body));
+router.post('/analytics/battery-health', (req, res) => getAnalyticsData(res, 'soc, btemp', 'in40_data', req.body));
+router.post('/analytics/power', (req, res) => getAnalyticsData(res, 'volt, amp', 'in40_data', req.body));
+router.post('/analytics/thermal', (req, res) => getAnalyticsData(res, 'btemp, mtemp, volt, amp', 'in40_data', req.body));
+router.post('/analytics/acceleration', (req, res) => getAnalyticsData(res, 'rpm, soc', 'in40_data', req.body));
 
 
 
 
-
-
-
-
-// power consumption analytics
-
-
-// router.get('/analytics/power', async (req, res) => {
-//     try {
-//         // Get the last 100 data points for voltage and amperage.
-//         const sql = `
-//             SELECT volt, amp, received_at 
-//             FROM in40_data 
-//             WHERE volt IS NOT NULL AND amp IS NOT NULL
-//             ORDER BY received_at DESC 
-//             LIMIT 100
-//         `;
-//         const [rows] = await pool.query(sql);
-//         // Reverse the data to show time moving forward on the chart.
-//         res.json(rows.reverse());
-
-//     } catch (dbError) {
-//         console.error('Database Error fetching IN40 power data:', dbError);
-//         res.status(500).json({ error: 'Failed to fetch IN40 power data.' });
-//     }
-// });
-
-
-
-
-
-
-router.post('/analytics/power', async (req, res) => {
+router.post('/analytics/mode-distribution', async (req, res) => {
     try {
         const { startDate, endDate } = req.body;
         let sql, params;
@@ -222,239 +61,24 @@ router.post('/analytics/power', async (req, res) => {
         if (startDate && endDate) {
             const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
             sql = `
-                SELECT volt, amp, received_at 
-                FROM in40_data 
-                WHERE volt IS NOT NULL AND amp IS NOT NULL
-                  AND received_at BETWEEN ? AND ?
-                ORDER BY received_at ASC 
-                LIMIT 500
+                SELECT vmode, COUNT(*) as count FROM in40_data
+                WHERE vmode IS NOT NULL AND vmode > 0 AND received_at BETWEEN ? AND ?
+                GROUP BY vmode
             `;
             params = [startDate, endOfDay];
         } else {
-            sql = `
-                SELECT volt, amp, received_at 
-                FROM in40_data 
-                WHERE volt IS NOT NULL AND amp IS NOT NULL
-                ORDER BY received_at DESC 
-                LIMIT 200
+             sql = `
+                SELECT vmode, COUNT(*) as count FROM in40_data
+                WHERE vmode IS NOT NULL AND vmode > 0 GROUP BY vmode
             `;
             params = [];
         }
-
         const [rows] = await pool.query(sql, params);
-        if (!startDate) rows.reverse();
         res.json(rows);
-
     } catch (dbError) {
-        console.error('Database Error fetching IN40 power data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 power data.' });
+        res.status(500).json({ error: 'Failed to fetch mode data.' });
     }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// thermal analytics  
-// router.get('/analytics/thermal', async (req, res) => {
-//     try {
-//         // Get the last 100 data points for temperature and power components.
-//         const sql = `
-//             SELECT btemp, mtemp, volt, amp, received_at 
-//             FROM in40_data 
-//             WHERE btemp IS NOT NULL AND mtemp IS NOT NULL AND volt IS NOT NULL AND amp IS NOT NULL
-//             ORDER BY received_at DESC 
-//             LIMIT 100
-//         `;
-//         const [rows] = await pool.query(sql);
-//         // Reverse the data to show time moving forward on the chart.
-//         res.json(rows.reverse());
-
-//     } catch (dbError) {
-//         console.error('Database Error fetching IN40 thermal data:', dbError);
-//         res.status(500).json({ error: 'Failed to fetch IN40 thermal data.' });
-//     }
-// });
-
-
-
-
-
-
-
-
-
-router.post('/analytics/thermal', async (req, res) => {
-    try {
-        const { startDate, endDate } = req.body;
-        let sql, params;
-
-        if (startDate && endDate) {
-            const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
-            sql = `
-                SELECT btemp, mtemp, volt, amp, received_at 
-                FROM in40_data 
-                WHERE btemp IS NOT NULL AND mtemp IS NOT NULL AND volt IS NOT NULL AND amp IS NOT NULL
-                  AND received_at BETWEEN ? AND ?
-                ORDER BY received_at ASC 
-                LIMIT 500
-            `;
-            params = [startDate, endOfDay];
-        } else {
-            sql = `
-                SELECT btemp, mtemp, volt, amp, received_at 
-                FROM in40_data 
-                WHERE btemp IS NOT NULL AND mtemp IS NOT NULL AND volt IS NOT NULL AND amp IS NOT NULL
-                ORDER BY received_at DESC 
-                LIMIT 200
-            `;
-            params = [];
-        }
-
-        const [rows] = await pool.query(sql, params);
-        if (!startDate) rows.reverse();
-        res.json(rows);
-
-    } catch (dbError) {
-        console.error('Database Error fetching IN40 thermal data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 thermal data.' });
-    }
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ** NEW ROUTE FOR ACCELERATION GRAPH **
-// router.get('/analytics/acceleration', async (req, res) => {
-//     try {
-//         // Get the last 100 data points for RPM and SOC to calculate acceleration.
-//         const sql = `
-//             SELECT rpm, soc, received_at 
-//             FROM in40_data 
-//             WHERE rpm IS NOT NULL AND soc IS NOT NULL
-//             ORDER BY received_at DESC 
-//             LIMIT 100
-//         `;
-//         const [rows] = await pool.query(sql);
-//         // Reverse the data to show time moving forward.
-//         res.json(rows.reverse());
-
-//     } catch (dbError) {
-//         console.error('Database Error fetching IN40 acceleration data:', dbError);
-//         res.status(500).json({ error: 'Failed to fetch IN40 acceleration data.' });
-//     }
-// });
-
-
-
-
-
-
-
-
-
-
-router.post('/analytics/acceleration', async (req, res) => {
-    try {
-        const { startDate, endDate } = req.body;
-        let sql, params;
-
-        if (startDate && endDate) {
-            const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
-            sql = `
-                SELECT rpm, soc, received_at 
-                FROM in40_data 
-                WHERE rpm IS NOT NULL AND soc IS NOT NULL
-                  AND received_at BETWEEN ? AND ?
-                ORDER BY received_at ASC 
-                LIMIT 500
-            `;
-            params = [startDate, endOfDay];
-        } else {
-            sql = `
-                SELECT rpm, soc, received_at 
-                FROM in40_data 
-                WHERE rpm IS NOT NULL AND soc IS NOT NULL
-                ORDER BY received_at DESC 
-                LIMIT 200
-            `;
-            params = [];
-        }
-
-        const [rows] = await pool.query(sql, params);
-        if (!startDate) rows.reverse();
-        res.json(rows);
-
-    } catch (dbError) {
-        console.error('Database Error fetching IN40 acceleration data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 acceleration data.' });
-    }
-});
-
-
-
-
-
-
-
-
-
-
-// ** NEW ROUTE FOR RIDING MODE PIE CHART **
-router.get('/analytics/mode-distribution', async (req, res) => {
-    try {
-        // This query counts how many records exist for each vmode
-        const sql = `
-            SELECT vmode, COUNT(*) as count 
-            FROM in40_data 
-            WHERE vmode IS NOT NULL AND vmode > 0
-            GROUP BY vmode
-        `;
-        const [rows] = await pool.query(sql);
-        res.json(rows);
-
-    } catch (dbError) {
-        console.error('Database Error fetching IN40 mode data:', dbError);
-        res.status(500).json({ error: 'Failed to fetch IN40 mode data.' });
-    }
-});
-
-
-
 
 
 
