@@ -1,5 +1,5 @@
 const mqtt = require('mqtt');
-const pool = require('../db/db'); // Ensure this path is correct for your structure
+const pool = require('../db/index'); // Ensure this path is correct for your structure
 
 // --- Buffer to hold the latest data for the vehicle ---
 let latestIn40Data = {};
