@@ -47,7 +47,7 @@ const getAnalyticsData = async (res, fields, table, body) => {
 router.post('/analytics/rpm-vs-soc', (req, res) => getAnalyticsData(res, 'rpm, soc', 'in40_data', req.body));
 router.post('/analytics/battery-health', (req, res) => getAnalyticsData(res, 'soc, btemp', 'in40_data', req.body));
 // router.post('/analytics/power', (req, res) => getAnalyticsData(res, 'volt, amp', 'in40_data', req.body));
-router.post('/analytics/thermal', (req, res) => getAnalyticsData(res, 'btemp, mtemp, volt, amp', 'in40_data', req.body));
+// router.post('/analytics/thermal', (req, res) => getAnalyticsData(res, 'btemp, mtemp, volt, amp', 'in40_data', req.body));
 router.post('/analytics/acceleration', (req, res) => getAnalyticsData(res, 'rpm, soc', 'in40_data', req.body));
 
 
@@ -123,6 +123,49 @@ router.post('/analytics/power', async (req, res) => {
 });
 
 
+
+
+
+router.post('/analytics/thermal', async (req, res) => {
+    try {
+        const { startDate, endDate } = req.body;
+        let sql, params;
+
+        // Base WHERE clause to get only meaningful data.
+        // It now includes temperatures of exactly 0.
+        const baseWhere = `btemp >= 0 AND mtemp >= 0 AND volt > 0 AND amp > 0`;
+
+        if (startDate && endDate) {
+            const endOfDay = endDate.substring(0, 10) + ' 23:59:59';
+            sql = `
+                SELECT btemp, mtemp, volt, amp, received_at 
+                FROM in40_data 
+                WHERE ${baseWhere}
+                  AND received_at BETWEEN ? AND ?
+                ORDER BY received_at ASC 
+                LIMIT 500
+            `;
+            params = [startDate, endOfDay];
+        } else {
+            sql = `
+                SELECT btemp, mtemp, volt, amp, received_at 
+                FROM in40_data 
+                WHERE ${baseWhere}
+                ORDER BY received_at DESC 
+                LIMIT 200
+            `;
+            params = [];
+        }
+
+        const [rows] = await pool.query(sql, params);
+        if (!startDate) rows.reverse();
+        res.json(rows);
+
+    } catch (dbError) {
+        console.error('Database Error fetching IN40 thermal data:', dbError);
+        res.status(500).json({ error: 'Failed to fetch IN40 thermal data.' });
+    }
+});
 
 
 
